@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Desafío de Botellas de Colores</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome JS for Icons -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+    <!-- Canvas Confetti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        /* Glassmorphism & Custom styling */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        /* Bottle animations and styling */
+        .bottle {
+            transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+            cursor: grab;
+            touch-action: none;
+        }
+
+        .bottle:active {
+            cursor: grabbing;
+        }
+
+        .bottle.selected {
+            transform: scale(1.12) translateY(-10px);
+            filter: drop-shadow(0 10px 15px rgba(99, 102, 241, 0.5));
+        }
+
+        .bottle.dragging {
+            opacity: 0.5;
+            transform: scale(1.05);
+        }
+
+        .bottle-slot {
+            transition: all 0.2s ease;
+        }
+
+        .bottle-slot.drag-over {
+            background-color: rgba(99, 102, 241, 0.15);
+            border-color: #6366f1;
+            transform: scale(1.05);
+        }
+
+        /* Liquid fill styling */
+        .liquid {
+            transition: fill 0.3s ease;
+        }
+
+        /* Timer Pulse */
+        @keyframes pulse-red {
+            0%, 100% { color: #ef4444; transform: scale(1); }
+            50% { color: #dc2626; transform: scale(1.08); }
+        }
+
+        .timer-warning {
+            animation: pulse-red 0.8s infinite;
+        }
+
+        /* Shimmer effect for buttons */
+        .btn-shimmer {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-shimmer::after {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(
+                60deg,
+                transparent,
+                rgba(255, 255, 255, 0.25),
+                transparent
+            );
+            transform: rotate(30deg);
+            transition: transform 0.8s ease;
+        }
+
+        .btn-shimmer:hover::after {
+            transform: translate(100%, 100%) rotate(30deg);
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-indigo-900 via-purple-900 to-slate-900 min-h-screen text-slate-100 flex flex-col justify-between items-center p-4">
+
+    <!-- Header & Scoreboard -->
+    <header class="w-full max-w-3xl glass-panel text-slate-800 rounded-3xl p-4 md:p-6 shadow-2xl mb-4 flex flex-wrap justify-between items-center gap-4">
+        <div>
+            <h1 class="text-2xl md:text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-pink-600">
+                <i class="fa-solid fa-flask-vial mr-2 text-indigo-600"></i>Botellas Mágicas
+            </h1>
+            <p class="text-xs md:text-sm text-slate-500 font-medium">¡Memoriza la secuencia antes de que desaparezca!</p>
+        </div>
+
+        <div class="flex items-center gap-3 md:gap-6">
+            <!-- Level Display -->
+            <div class="bg-indigo-50 border border-indigo-100 rounded-2xl px-4 py-2 text-center shadow-sm">
+                <span class="block text-xs uppercase font-bold text-indigo-400">Nivel</span>
+                <span id="level-display" class="text-xl md:text-2xl font-black text-indigo-700">1</span>
+            </div>
+
+            <!-- Score Display -->
+            <div class="bg-amber-50 border border-amber-100 rounded-2xl px-4 py-2 text-center shadow-sm">
+                <span class="block text-xs uppercase font-bold text-amber-500">Puntaje</span>
+                <span id="score-display" class="text-xl md:text-2xl font-black text-amber-600">0</span>
+            </div>
+
+            <!-- Audio Toggle -->
+            <button id="sound-btn" onclick="toggleSound()" class="w-10 h-10 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-all shadow-sm">
+                <i id="sound-icon" class="fa-solid fa-volume-high"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Game Area -->
+    <main class="w-full max-w-3xl flex-1 flex flex-col justify-center items-center relative">
+        
+        <!-- Game Info Bar (Timer & Status) -->
+        <div class="w-full glass-panel rounded-2xl p-4 mb-6 shadow-xl text-slate-800 flex justify-between items-center">
+            <!-- Timer Display -->
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-indigo-500 text-white flex items-center justify-center text-lg shadow-md">
+                    <i class="fa-regular fa-clock"></i>
+                </div>
+                <div>
+                    <span class="block text-xs text-slate-500 font-semibold uppercase">Tiempo Restante</span>
+                    <span id="timer-display" class="text-2xl font-extrabold tracking-wider text-slate-800">03:00</span>
+                </div>
+            </div>
+
+            <!-- Status Indicator -->
+            <div id="status-badge" class="px-4 py-2 rounded-xl text-xs md:text-sm font-bold bg-amber-100 text-amber-800 flex items-center gap-2 shadow-sm">
+                <span class="relative flex h-3 w-3">
+                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                  <span class="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
+                </span>
+                <span id="status-text">¡Prepara tu memoria!</span>
+            </div>
+        </div>
+
+        <!-- Bottle Rack Board -->
+        <div class="w-full glass-panel rounded-3xl p-6 md:p-8 shadow-2xl relative min-h-[320px] flex flex-col justify-between items-center">
+            
+            <!-- Instructions Header inside Board -->
+            <p id="instruction-text" class="text-slate-600 font-medium text-center text-sm md:text-base mb-6">
+                Memoriza el orden de los colores. Tienes <span id="memo-time-text" class="font-bold text-indigo-600">3.0s</span>
+            </p>
+
+            <!-- Container for Bottles -->
+            <div id="bottles-container" class="w-full flex flex-wrap justify-center items-center gap-3 md:gap-6 py-4">
+                <!-- Bottles generated dynamically by JS -->
+            </div>
+
+            <!-- Action Controls -->
+            <div class="w-full flex justify-center items-center gap-4 mt-6">
+                <button id="verify-btn" onclick="checkOrder()" disabled class="btn-shimmer bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-bold py-3 px-8 rounded-2xl shadow-lg hover:shadow-emerald-500/30 hover:scale-105 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none transition-all flex items-center gap-2">
+                    <i class="fa-solid fa-circle-check"></i> Comprobar Orden
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer Info -->
+    <footer class="w-full max-w-3xl text-center text-slate-400 text-xs py-4">
+        Haz clic en dos botellas para intercambiar su posición, o arrástralas y suéltalas.
+    </footer>
+
+    <!-- Modals -->
+    <!-- Level Complete / Victory Modal -->
+    <div id="victory-modal" class="fixed inset-0 bg-slate-900/80 backdrop-blur-md hidden flex justify-center items-center p-4 z-50">
+        <div class="glass-panel text-slate-800 rounded-3xl p-8 max-w-md w-full text-center shadow-2xl transform transition-all scale-95 animate-fade-in">
+            <div class="w-20 h-20 bg-gradient-to-tr from-amber-400 to-yellow-300 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg text-4xl text-amber-900">
+                <i class="fa-solid fa-trophy"></i>
+            </div>
+            <h2 class="text-3xl font-black mb-2 text-slate-800">¡Nivel Completado!</h2>
+            <p class="text-slate-600 text-sm mb-6">¡Excelente memoria! Has ordenado todas las botellas correctamente.</p>
+            
+            <div class="bg-indigo-50/80 rounded-2xl p-4 mb-6 space-y-2 border border-indigo-100 text-left">
+                <div class="flex justify-between text-sm">
+                    <span class="text-slate-500">Tiempo de resolución:</span>
+                    <span id="modal-time-taken" class="font-bold text-slate-700">00:45</span>
+                </div>
+                <div class="flex justify-between text-sm">
+                    <span class="text-slate-500">Siguiente tiempo para memorizar:</span>
+                    <span id="modal-next-memo" class="font-bold text-indigo-600">2.8s</span>
+                </div>
+                <div class="flex justify-between text-sm">
+                    <span class="text-slate-500">Siguiente límite de tiempo:</span>
+                    <span id="modal-next-limit" class="font-bold text-indigo-600">02:50</span>
+                </div>
+            </div>
+
+            <button onclick="nextLevel()" class="btn-shimmer w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold py-3.5 px-6 rounded-2xl shadow-xl hover:shadow-indigo-500/30 hover:scale-[1.02] active:scale-98 transition-all flex items-center justify-center gap-2">
+                Siguiente Nivel <i class="fa-solid fa-arrow-right"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Game Over Modal -->
+    <div id="gameover-modal" class="fixed inset-0 bg-slate-900/80 backdrop-blur-md hidden flex justify-center items-center p-4 z-50">
+        <div class="glass-panel text-slate-800 rounded-3xl p-8 max-w-md w-full text-center shadow-2xl">
+            <div class="w-20 h-20 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-4 text-4xl text-rose-600 shadow-md">
+                <i class="fa-solid fa-hourglass-end"></i>
+            </div>
+            <h2 class="text-3xl font-black mb-2 text-slate-800">¡Tiempo Agotado!</h2>
+            <p class="text-slate-600 text-sm mb-6">No lograste ordenar las botellas a tiempo. ¡Inténtalo de nuevo!</p>
+
+            <div class="bg-rose-50 rounded-2xl p-4 mb-6 border border-rose-100 flex justify-between items-center text-left">
+                <div>
+                    <span class="block text-xs uppercase text-rose-400 font-bold">Nivel Alcanzado</span>
+                    <span id="modal-final-level" class="text-xl font-black text-rose-700">1</span>
+                </div>
+                <div>
+                    <span class="block text-xs uppercase text-rose-400 font-bold">Puntaje Final</span>
+                    <span id="modal-final-score" class="text-xl font-black text-rose-700">0</span>
+                </div>
+            </div>
+
+            <button onclick="restartGame()" class="btn-shimmer w-full bg-gradient-to-r from-rose-500 to-pink-600 text-white font-bold py-3.5 px-6 rounded-2xl shadow-xl hover:shadow-rose-500/30 hover:scale-[1.02] active:scale-98 transition-all flex items-center justify-center gap-2">
+                <i class="fa-solid fa-rotate-right"></i> Reiniciar Juego
+            </button>
+        </div>
+    </div>
+
+    <!-- Audio FX Generator using Web Audio API -->
+    <script>
+        // Web Audio API Synthesizer for sound effects (no external URLs needed)
+        class SoundFX {
+            constructor() {
+                this.ctx = null;
+                this.enabled = true;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    this.ctx = new AudioCtx();
+                }
+            }
+
+            playTone(freq, type, duration, gainVal = 0.1) {
+                if (!this.enabled) return;
+                this.init();
+                try {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = type;
+                    osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                    gain.gain.setValueAtTime(gainVal, this.ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + duration);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start();
+                    osc.stop(this.ctx.currentTime + duration);
+                } catch (e) { console.log(e); }
+            }
+
+            playSelect() {
+                this.playTone(440, 'sine', 0.1, 0.08);
+            }
+
+            playSwap() {
+                this.playTone(587.33, 'triangle', 0.15, 0.1);
+            }
+
+            playWin() {
+                if (!this.enabled) return;
+                this.init();
+                const notes = [523.25, 659.25, 783.99, 1046.50];
+                notes.forEach((freq, idx) => {
+                    setTimeout(() => {
+                        this.playTone(freq, 'sine', 0.3, 0.12);
+                    }, idx * 120);
+                });
+            }
+
+            playError() {
+                if (!this.enabled) return;
+                this.init();
+                this.playTone(220, 'sawtooth', 0.25, 0.1);
+                setTimeout(() => this.playTone(180, 'sawtooth', 0.3, 0.1), 150);
+            }
+        }
+
+        const soundFX = new SoundFX();
+        let soundMuted = false;
+
+        function toggleSound() {
+            soundMuted = !soundMuted;
+            soundFX.enabled = !soundMuted;
+            const icon = document.getElementById('sound-icon');
+            if (soundMuted) {
+                icon.className = 'fa-solid fa-volume-xmark text-rose-500';
+            } else {
+                icon.className = 'fa-solid fa-volume-high text-slate-600';
+            }
+        }
+
+        /* Game State Variables */
+        let currentLevel = 1;
+        let score = 0;
+        let originalSequence = [];
+        let playerSequence = [];
+        let selectedIndex = null;
+        let timerInterval = null;
+        let memoInterval = null;
+        let timeRemaining = 180; // Default 3 minutes
+        let isMemorizing = false;
+        let isGameActive = false;
+
+        // Palette of vibrant bottle liquid colors
+        const COLOR_PALETTE = [
+            { name: 'Rojo', hex: '#EF4444' },
+            { name: 'Azul', hex: '#3B82F6' },
+            { name: 'Verde', hex: '#10B981' },
+            { name: 'Amarillo', hex: '#F59E0B' },
+            { name: 'Morado', hex: '#8B5CF6' },
+            { name: 'Rosa', hex: '#EC4899' },
+            { name: 'Cian', hex: '#06B6D4' },
+            { name: 'Naranja', hex: '#F97316' },
+            { name: 'Lila', hex: '#A855F7' },
+            { name: 'Lima', hex: '#84CC16' }
+        ];
+
+        /* Game Logic Functions */
+
+        // Get memorization time based on level (3.0s -> min 1.0s)
+        function getMemorizationTime(level) {
+            const time = 3.0 - (level - 1) * 0.2;
+            return Math.max(1.0, parseFloat(time.toFixed(1)));
+        }
+
+        // Get total level solution time (180s -> min 60s)
+        function getLevelSolveTime(level) {
+            const time = 180 - (level - 1) * 10;
+            return Math.max(60, time);
+        }
+
+        // Number of bottles based on level (starts at 4, maxes out at 8)
+        function getBottleCount(level) {
+            return Math.min(4 + Math.floor((level - 1) / 2), 8);
+        }
+
+        // Initialize Level
+        function startLevel() {
+            clearInterval(timerInterval);
+            clearInterval(memoInterval);
+
+            isGameActive = false;
+            selectedIndex = null;
+            document.getElementById('verify-btn').disabled = true;
+
+            const bottleCount = getBottleCount(currentLevel);
+            const memoTime = getMemorizationTime(currentLevel);
+            timeRemaining = getLevelSolveTime(currentLevel);
+
+            // Update UI Counters
+            document.getElementById('level-display').innerText = currentLevel;
+            document.getElementById('score-display').innerText = score;
+            document.getElementById('memo-time-text').innerText = memoTime.toFixed(1) + 's';
+            updateTimerDisplay();
+
+            // Select random colors without repeating if possible
+            const shuffledPalette = [...COLOR_PALETTE].sort(() => 0.5 - Math.random());
+            originalSequence = shuffledPalette.slice(0, bottleCount);
+
+            // Make a copy for player that will be shuffled later
+            playerSequence = [...originalSequence];
+
+            // Render visible bottles during memorization period
+            isMemorizing = true;
+            renderBottles(originalSequence, false);
+
+            // Update Status Badge
+            const statusBadge = document.getElementById('status-badge');
+            statusBadge.className = 'px-4 py-2 rounded-xl text-xs md:text-sm font-bold bg-amber-100 text-amber-800 flex items-center gap-2 shadow-sm';
+            document.getElementById('status-text').innerText = '¡Memoriza los colores!';
+            document.getElementById('instruction-text').innerHTML = `Memoriza el orden de los colores. Tienes <span class="font-bold text-indigo-600">${memoTime.toFixed(1)}s</span>`;
+
+            // Start Memorization Countdown
+            let countdown = memoTime;
+            memoInterval = setInterval(() => {
+                countdown -= 0.1;
+                if (countdown <= 0) {
+                    clearInterval(memoInterval);
+                    endMemorizationPhase();
+                } else {
+                    document.getElementById('memo-time-text').innerText = countdown.toFixed(1) + 's';
+                }
+            }, 100);
+        }
+
+        // End Memorization & Start Play Phase
+        function endMemorizationPhase() {
+            isMemorizing = false;
+            isGameActive = true;
+
+            // Shuffle sequence ensuring it's not identical to the solution
+            do {
+                playerSequence.sort(() => 0.5 - Math.random());
+            } while (JSON.stringify(playerSequence) === JSON.stringify(originalSequence) && playerSequence.length > 1);
+
+            renderBottles(playerSequence, true);
+
+            // Enable check button
+            document.getElementById('verify-btn').disabled = false;
+
+            // Update Status Badge
+            const statusBadge = document.getElementById('status-badge');
+            statusBadge.className = 'px-4 py-2 rounded-xl text-xs md:text-sm font-bold bg-emerald-100 text-emerald-800 flex items-center gap-2 shadow-sm';
+            document.getElementById('status-text').innerText = '¡Ordena las botellas!';
+            document.getElementById('instruction-text').innerText = 'Arrastra o haz clic en dos botellas para intercambiar su posición.';
+
+            // Start Level Timer
+            startTimer();
+        }
+
+        // Render Bottle Elements
+        function renderBottles(sequence, interactive = false) {
+            const container = document.getElementById('bottles-container');
+            container.innerHTML = '';
+
+            sequence.forEach((colorObj, index) => {
+                // Wrapper Slot
+                const slot = document.createElement('div');
+                slot.className = 'bottle-slot p-2 md:p-3 rounded-2xl border-2 border-dashed border-slate-300/60 flex flex-col items-center justify-center bg-white/40 shadow-inner relative';
+                slot.dataset.index = index;
+
+                // Bottle SVG Markup
+                const bottle = document.createElement('div');
+                bottle.className = `bottle flex flex-col items-center relative ${selectedIndex === index ? 'selected' : ''}`;
+                bottle.dataset.index = index;
+                if (interactive) {
+                    bottle.draggable = true;
+                }
+
+                bottle.innerHTML = `
+                    <div class="relative w-14 h-28 md:w-16 md:h-32 flex items-center justify-center drop-shadow-md">
+                        <!-- SVG Bottle Silhouette -->
+                        <svg viewBox="0 0 100 200" class="w-full h-full">
+                            <!-- Cap -->
+                            <rect x="35" y="5" width="30" height="15" rx="4" fill="#64748B" />
+                            <!-- Neck -->
+                            <path d="M 40 20 L 60 20 L 65 50 L 35 50 Z" fill="rgba(255, 255, 255, 0.6)" stroke="#94A3B8" stroke-width="3"/>
+                            <!-- Main Body Glass -->
+                            <rect x="15" y="50" width="70" height="135" rx="20" fill="rgba(255, 255, 255, 0.4)" stroke="#94A3B8" stroke-width="4"/>
+                            <!-- Glass Highlight -->
+                            <path d="M 25 60 Q 20 100 25 170" fill="none" stroke="white" stroke-width="4" stroke-linecap="round" opacity="0.7"/>
+                            
+                            <!-- Liquid Level -->
+                            <g class="liquid-group">
+                                <rect class="liquid" x="20" y="70" width="60" height="110" rx="12" fill="${colorObj.hex}" />
+                                <!-- Liquid Wave Top -->
+                                <ellipse cx="50" cy="70" rx="30" ry="6" fill="${colorObj.hex}" opacity="0.8"/>
+                                <!-- Bubble Highlights in Liquid -->
+                                <circle cx="35" cy="120" r="3" fill="rgba(255,255,255,0.4)"/>
+                                <circle cx="60" cy="140" r="4" fill="rgba(255,255,255,0.3)"/>
+                                <circle cx="45" cy="160" r="2.5" fill="rgba(255,255,255,0.5)"/>
+                            </g>
+                        </svg>
+                    </div>
+                    <!-- Label Tag below bottle -->
+                    <span class="mt-2 text-xs font-bold text-slate-600 bg-white/80 px-2.5 py-1 rounded-full shadow-sm border border-slate-200">${index + 1}</span>
+                `;
+
+                // Interactive Click Event (Click to Select / Swap)
+                if (interactive) {
+                    bottle.addEventListener('click', () => handleBottleClick(index));
+
+                    // Drag and Drop Events
+                    bottle.addEventListener('dragstart', handleDragStart);
+                    bottle.addEventListener('dragend', handleDragEnd);
+
+                    slot.addEventListener('dragover', handleDragOver);
+                    slot.addEventListener('dragleave', handleDragLeave);
+                    slot.addEventListener('drop', handleDrop);
+                }
+
+                slot.appendChild(bottle);
+                container.appendChild(slot);
+            });
+        }
+
+        /* Click & Swap Handler */
+        function handleBottleClick(index) {
+            if (!isGameActive) return;
+
+            soundFX.playSelect();
+
+            if (selectedIndex === null) {
+                // First bottle selected
+                selectedIndex = index;
+            } else if (selectedIndex === index) {
+                // Deselect if clicked same bottle
+                selectedIndex = null;
+            } else {
+                // Swap two selected bottles
+                swapBottles(selectedIndex, index);
+                selectedIndex = null;
+            }
+
+            renderBottles(playerSequence, true);
+        }
+
+        /* Drag & Drop Logic */
+        let draggedIndex = null;
+
+        function handleDragStart(e) {
+            if (!isGameActive) return;
+            draggedIndex = parseInt(this.dataset.index);
+            this.classList.add('dragging');
+            e.dataTransfer.setData('text/plain', draggedIndex);
+        }
+
+        function handleDragEnd() {
+            this.classList.remove('dragging');
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            this.classList.add('drag-over');
+        }
+
+        function handleDragLeave() {
+            this.classList.remove('drag-over');
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            this.classList.remove('drag-over');
+            const targetIndex = parseInt(this.dataset.index);
+
+            if (draggedIndex !== null && draggedIndex !== targetIndex) {
+                swapBottles(draggedIndex, targetIndex);
+                renderBottles(playerSequence, true);
+            }
+            draggedIndex = null;
+        }
+
+        // Swap function helper
+        function swapBottles(i, j) {
+            const temp = playerSequence[i];
+            playerSequence[i] = playerSequence[j];
+            playerSequence[j] = temp;
+            soundFX.playSwap();
+        }
+
+        /* Timer Control */
+        function startTimer() {
+            updateTimerDisplay();
+            timerInterval = setInterval(() => {
+                timeRemaining--;
+                updateTimerDisplay();
+
+                if (timeRemaining <= 0) {
+                    clearInterval(timerInterval);
+                    gameOver();
+                }
+            }, 1000);
+        }
+
+        function updateTimerDisplay() {
+            const minutes = Math.floor(timeRemaining / 60);
+            const seconds = timeRemaining % 60;
+            const displayStr = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            const timerEl = document.getElementById('timer-display');
+            timerEl.innerText = displayStr;
+
+            if (timeRemaining <= 15) {
+                timerEl.classList.add('timer-warning');
+            } else {
+                timerEl.classList.remove('timer-warning');
+            }
+        }
+
+        /* Check Player Solution */
+        function checkOrder() {
+            if (!isGameActive) return;
+
+            let isCorrect = true;
+            for (let i = 0; i < originalSequence.length; i++) {
+                if (originalSequence[i].hex !== playerSequence[i].hex) {
+                    isCorrect = false;
+                    break;
+                }
+            }
+
+            if (isCorrect) {
+                levelWin();
+            } else {
+                soundFX.playError();
+                // Visual shake animation feedback
+                const container = document.getElementById('bottles-container');
+                container.classList.add('animate-bounce');
+                setTimeout(() => container.classList.remove('animate-bounce'), 600);
+                
+                // Show temporary warning on status badge
+                const statusText = document.getElementById('status-text');
+                const originalText = statusText.innerText;
+                statusText.innerText = '¡Orden incorrecto! Intenta de nuevo.';
+                setTimeout(() => {
+                    if (isGameActive) statusText.innerText = originalText;
+                }, 1500);
+            }
+        }
+
+        /* Level Won */
+        function levelWin() {
+            clearInterval(timerInterval);
+            isGameActive = false;
+            soundFX.playWin();
+
+            // Calculate level score based on remaining time
+            const levelPoints = 100 + timeRemaining * 5;
+            score += levelPoints;
+            document.getElementById('score-display').innerText = score;
+
+            // Trigger Confetti Celebration
+            confetti({
+                particleCount: 120,
+                spread: 70,
+                origin: { y: 0.6 }
+            });
+
+            // Calculate stats for modal
+            const solveTimeAllocated = getLevelSolveTime(currentLevel);
+            const timeTaken = solveTimeAllocated - timeRemaining;
+            const minsTaken = Math.floor(timeTaken / 60).toString().padStart(2, '0');
+            const secsTaken = (timeTaken % 60).toString().padStart(2, '0');
+
+            document.getElementById('modal-time-taken').innerText = `${minsTaken}:${secsTaken}`;
+            document.getElementById('modal-next-memo').innerText = `${getMemorizationTime(currentLevel + 1).toFixed(1)}s`;
+            
+            const nextSolveLimit = getLevelSolveTime(currentLevel + 1);
+            const nextMins = Math.floor(nextSolveLimit / 60).toString().padStart(2, '0');
+            const nextSecs = (nextSolveLimit % 60).toString().padStart(2, '0');
+            document.getElementById('modal-next-limit').innerText = `${nextMins}:${nextSecs}`;
+
+            // Show Victory Modal
+            document.getElementById('victory-modal').classList.remove('hidden');
+        }
+
+        function nextLevel() {
+            currentLevel++;
+            document.getElementById('victory-modal').classList.add('hidden');
+            startLevel();
+        }
+
+        /* Game Over */
+        function gameOver() {
+            isGameActive = false;
+            soundFX.playError();
+
+            document.getElementById('modal-final-level').innerText = currentLevel;
+            document.getElementById('modal-final-score').innerText = score;
+            document.getElementById('gameover-modal').classList.remove('hidden');
+        }
+
+        function restartGame() {
+            currentLevel = 1;
+            score = 0;
+            document.getElementById('gameover-modal').classList.add('hidden');
+            startLevel();
+        }
+
+        // Initialize on load
+        window.onload = function() {
+            startLevel();
+        };
+    </script>
+</body>
+</html>
